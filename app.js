@@ -8,7 +8,10 @@ const state = {
   questions: [],
   current: 0,
   score: 0,
-  awaitingAnswer: false,
+  selectedCountryId: null,
+  selectedChoiceId: null,
+  locked: false,
+  pendingAdvance: false,
 };
 
 const els = {
@@ -24,14 +27,13 @@ const els = {
   scoreDisplay: document.getElementById('score-display'),
   finalScore: document.getElementById('final-score'),
   finalComment: document.getElementById('final-comment'),
+  confirmBtn: document.getElementById('confirm-btn'),
 };
 
-let svg, gMap, path, projection, tooltip;
+let svg, gMap, path, projection, zoomBehavior;
 let allFeatures = [];
 
-function normId(id) {
-  return String(parseInt(id, 10));
-}
+function normId(id) { return String(parseInt(id, 10)); }
 
 async function init() {
   try {
@@ -45,6 +47,8 @@ async function init() {
 
   setupMap();
   setupMenu();
+  setupZoomControls();
+  setupConfirm();
 
   els.loading.hidden = true;
   els.menu.hidden = false;
@@ -52,8 +56,11 @@ async function init() {
 
 function setupMap() {
   const width = 980, height = 500;
-  els.mapContainer.innerHTML = '';
-  svg = d3.select(els.mapContainer).append('svg')
+  // remove only the existing svg, keep zoom controls
+  const existingSvg = els.mapContainer.querySelector('svg');
+  if (existingSvg) existingSvg.remove();
+
+  svg = d3.select(els.mapContainer).insert('svg', '.zoom-controls')
     .attr('viewBox', `0 0 ${width} ${height}`)
     .attr('preserveAspectRatio', 'xMidYMid meet');
 
@@ -68,7 +75,32 @@ function setupMap() {
     .attr('d', path)
     .attr('data-id', d => normId(d.id));
 
-  tooltip = d3.select(els.mapContainer).append('div').attr('class', 'tooltip');
+  zoomBehavior = d3.zoom()
+    .scaleExtent([1, 100])
+    .translateExtent([[-width * 0.5, -height * 0.5], [width * 1.5, height * 1.5]])
+    .on('zoom', (event) => {
+      gMap.attr('transform', event.transform);
+    });
+  svg.call(zoomBehavior);
+  svg.on('dblclick.zoom', null); // disable double-click zoom (interferes with selection)
+}
+
+function setupZoomControls() {
+  document.getElementById('zoom-in').addEventListener('click', () => {
+    svg.transition().duration(200).call(zoomBehavior.scaleBy, 1.6);
+  });
+  document.getElementById('zoom-out').addEventListener('click', () => {
+    svg.transition().duration(200).call(zoomBehavior.scaleBy, 1 / 1.6);
+  });
+  document.getElementById('zoom-reset').addEventListener('click', () => {
+    svg.transition().duration(250).call(zoomBehavior.transform, d3.zoomIdentity);
+  });
+}
+
+function resetZoom(animate = false) {
+  if (!svg || !zoomBehavior) return;
+  const sel = animate ? svg.transition().duration(250) : svg;
+  sel.call(zoomBehavior.transform, d3.zoomIdentity);
 }
 
 function setupMenu() {
@@ -86,6 +118,22 @@ function setupMenu() {
   document.getElementById('play-again').addEventListener('click', () => startMode(state.mode, state.region, state.total));
 }
 
+function setupConfirm() {
+  els.confirmBtn.addEventListener('click', () => {
+    if (state.pendingAdvance) {
+      advanceQuestion();
+      return;
+    }
+    if (state.mode === 'name-to-place') {
+      if (!state.selectedCountryId) return;
+      judgeNameToPlace();
+    } else if (state.mode === 'place-to-name') {
+      if (!state.selectedChoiceId) return;
+      judgePlaceToName();
+    }
+  });
+}
+
 function startMode(mode, region, total) {
   state.mode = mode;
   state.region = region;
@@ -96,12 +144,14 @@ function startMode(mode, region, total) {
 
   resetMapInteractions();
   resetCountryClasses();
+  resetZoom(false);
 
   if (state.pool.length === 0) {
     alert('対象の国がありません。');
     return;
   }
 
+  document.body.classList.add('game-mode');
   els.menu.hidden = true;
   els.result.hidden = true;
   els.game.hidden = false;
@@ -143,15 +193,26 @@ function resetMapInteractions() {
     .on('mouseover', null)
     .on('mousemove', null)
     .on('mouseout', null);
-  if (tooltip) tooltip.style('display', 'none');
 }
 
 function resetCountryClasses() {
-  gMap.selectAll('.country').classed('target correct wrong disabled', false);
+  gMap.selectAll('.country').classed('target correct wrong selected locked', false);
+}
+
+function setConfirmState(label, opts = {}) {
+  els.confirmBtn.textContent = label;
+  els.confirmBtn.disabled = !!opts.disabled;
+  els.confirmBtn.classList.toggle('next', !!opts.next);
+  els.confirmBtn.style.display = opts.hidden ? 'none' : '';
 }
 
 function nextQuestion() {
   if (state.current >= state.questions.length) return showResult();
+
+  state.locked = false;
+  state.pendingAdvance = false;
+  state.selectedCountryId = null;
+  state.selectedChoiceId = null;
 
   const q = state.questions[state.current];
   els.progress.textContent = `${state.current + 1} / ${state.questions.length}`;
@@ -160,6 +221,7 @@ function nextQuestion() {
   els.feedback.className = 'feedback';
   els.choices.innerHTML = '';
   resetCountryClasses();
+  resetZoom(true);
 
   if (state.mode === 'name-to-place') {
     runNameToPlace(q);
@@ -169,49 +231,56 @@ function nextQuestion() {
 }
 
 function runNameToPlace(q) {
-  els.promptArea.innerHTML = `<span>地図でクリック →</span><span class="prompt-country">${q.name}</span>`;
-  state.awaitingAnswer = true;
+  els.promptArea.innerHTML = `<span>地図でタップ →</span><span class="prompt-country">${q.name}</span>`;
+  setConfirmState('確定', { disabled: true });
 
   gMap.selectAll('.country').on('click', function(event, d) {
-    if (!state.awaitingAnswer) return;
+    if (state.locked) return;
     const clickedId = normId(d.id);
     const meta = COUNTRIES[clickedId];
     if (!meta) {
-      els.feedback.textContent = 'この地域はクイズ対象外です';
-      els.feedback.className = 'feedback';
+      // unmapped clickable territory — ignore as selection
       return;
     }
-    handleNameToPlaceAnswer(clickedId, q);
+    state.selectedCountryId = clickedId;
+    gMap.selectAll('.country').classed('selected', false);
+    d3.select(this).classed('selected', true);
+    setConfirmState('確定', { disabled: false });
   });
 }
 
-function handleNameToPlaceAnswer(clickedId, q) {
-  state.awaitingAnswer = false;
-  const correctSel = gMap.selectAll('.country').filter(d => normId(d.id) === q.id);
+function judgeNameToPlace() {
+  const q = state.questions[state.current];
+  state.locked = true;
+  state.pendingAdvance = true;
 
-  if (clickedId === q.id) {
+  const correctSel = gMap.selectAll('.country').filter(d => normId(d.id) === q.id);
+  const selected = state.selectedCountryId;
+
+  if (selected === q.id) {
     state.score++;
-    correctSel.classed('correct', true);
+    correctSel.classed('selected', false).classed('correct', true);
     showFeedback(`正解！ ${q.name}`, 'correct');
   } else {
-    const clickedSel = gMap.selectAll('.country').filter(d => normId(d.id) === clickedId);
-    const clickedMeta = COUNTRIES[clickedId];
-    const clickedName = clickedMeta ? clickedMeta[0] : '不明';
-    clickedSel.classed('wrong', true);
+    const selectedSel = gMap.selectAll('.country').filter(d => normId(d.id) === selected);
+    const meta = COUNTRIES[selected];
+    const selectedName = meta ? meta[0] : '不明';
+    selectedSel.classed('selected', false).classed('wrong', true);
     correctSel.classed('correct', true);
-    showFeedback(`不正解：${clickedName} / 正解は ${q.name}`, 'wrong');
+    showFeedback(`不正解：${selectedName} / 正解は ${q.name}`, 'wrong');
   }
   els.scoreDisplay.textContent = `スコア: ${state.score}`;
+  gMap.selectAll('.country').classed('locked', true);
 
-  setTimeout(() => {
-    state.current++;
-    nextQuestion();
-  }, 1700);
+  const isLast = state.current >= state.questions.length - 1;
+  setConfirmState(isLast ? '結果を見る' : '次の問題へ', { next: true });
 }
 
 function runPlaceToName(q) {
   els.promptArea.innerHTML = `<span>赤色で示された国は？</span>`;
   gMap.selectAll('.country').filter(d => normId(d.id) === q.id).classed('target', true);
+  // disable map clicks in this mode
+  gMap.selectAll('.country').classed('locked', true);
 
   const distractors = pickDistractors(q, 3);
   const choices = [q, ...distractors].sort(() => Math.random() - 0.5);
@@ -219,9 +288,18 @@ function runPlaceToName(q) {
   for (const choice of choices) {
     const btn = document.createElement('button');
     btn.textContent = choice.name;
-    btn.addEventListener('click', () => handlePlaceToNameAnswer(btn, choice, q));
+    btn.dataset.choiceId = choice.id;
+    btn.addEventListener('click', () => {
+      if (state.locked) return;
+      state.selectedChoiceId = choice.id;
+      els.choices.querySelectorAll('button').forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+      setConfirmState('確定', { disabled: false });
+    });
     els.choices.appendChild(btn);
   }
+
+  setConfirmState('確定', { disabled: true });
 }
 
 function pickDistractors(target, n) {
@@ -242,52 +320,54 @@ function pickDistractors(target, n) {
   return result;
 }
 
-function handlePlaceToNameAnswer(btn, choice, q) {
-  els.choices.querySelectorAll('button').forEach(b => b.disabled = true);
+function judgePlaceToName() {
+  const q = state.questions[state.current];
+  state.locked = true;
+  state.pendingAdvance = true;
 
-  if (choice.id === q.id) {
+  const buttons = els.choices.querySelectorAll('button');
+  const selectedId = state.selectedChoiceId;
+
+  buttons.forEach(b => {
+    b.disabled = true;
+    b.classList.remove('selected');
+    const id = b.dataset.choiceId;
+    if (id === q.id) b.classList.add('correct');
+    else if (id === selectedId) b.classList.add('wrong');
+  });
+
+  if (selectedId === q.id) {
     state.score++;
-    btn.classList.add('correct');
     showFeedback(`正解！`, 'correct');
   } else {
-    btn.classList.add('wrong');
-    els.choices.querySelectorAll('button').forEach(b => {
-      if (b.textContent === q.name) b.classList.add('correct');
-    });
     showFeedback(`不正解。 正解は ${q.name}`, 'wrong');
   }
   els.scoreDisplay.textContent = `スコア: ${state.score}`;
 
-  setTimeout(() => {
-    state.current++;
-    nextQuestion();
-  }, 1700);
+  const isLast = state.current >= state.questions.length - 1;
+  setConfirmState(isLast ? '結果を見る' : '次の問題へ', { next: true });
+}
+
+function advanceQuestion() {
+  state.current++;
+  nextQuestion();
 }
 
 function runExplore() {
-  els.promptArea.innerHTML = '国にカーソルを合わせる、またはタップで国名を表示';
+  els.promptArea.innerHTML = '国をタップ／カーソル合わせで国名を表示';
   els.progress.textContent = '';
   els.scoreDisplay.textContent = '';
+  setConfirmState('', { hidden: true });
 
-  const showName = (event, d) => {
+  const showName = function(event, d) {
     const id = normId(d.id);
     const meta = COUNTRIES[id];
-    if (!meta) {
-      tooltip.style('display', 'none');
-      return;
-    }
-    const rect = els.mapContainer.getBoundingClientRect();
-    tooltip
-      .style('display', 'block')
-      .style('left', (event.clientX - rect.left + 10) + 'px')
-      .style('top', (event.clientY - rect.top + 10) + 'px')
-      .text(meta[0]);
+    els.feedback.textContent = meta ? meta[0] : '—';
+    els.feedback.className = 'feedback';
   };
 
   gMap.selectAll('.country')
     .on('mouseover', showName)
-    .on('mousemove', showName)
-    .on('mouseout', () => tooltip.style('display', 'none'))
     .on('click', showName);
 }
 
@@ -297,6 +377,7 @@ function showFeedback(msg, kind) {
 }
 
 function showResult() {
+  document.body.classList.remove('game-mode');
   els.game.hidden = true;
   els.result.hidden = false;
   const total = state.questions.length;
@@ -314,6 +395,8 @@ function showResult() {
 function backToMenu() {
   resetMapInteractions();
   resetCountryClasses();
+  resetZoom(false);
+  document.body.classList.remove('game-mode');
   els.game.hidden = true;
   els.result.hidden = true;
   els.menu.hidden = false;

@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
   <title>世界地図クイズ</title>
   <link rel="stylesheet" href="style.css">
 </head>
@@ -24,7 +24,7 @@
           <button class="mode-btn" data-mode="name-to-place">
             <span class="emoji">📍</span>
             <strong>国名 → 場所</strong>
-            <small>表示された国を地図上でクリック</small>
+            <small>表示された国を地図上でタップ</small>
           </button>
           <button class="mode-btn" data-mode="place-to-name">
             <span class="emoji">🗺️</span>
@@ -59,18 +59,32 @@
     </section>
 
     <section id="game" hidden>
-      <div class="game-header">
-        <button id="back-btn">← メニュー</button>
-        <div class="score">
-          <span id="progress"></span>
-          <span id="score-display"></span>
+      <div class="game-top">
+        <div class="game-header-row">
+          <button id="back-btn" class="icon-btn" aria-label="メニューに戻る">←</button>
+          <div class="score">
+            <span id="progress"></span>
+            <span id="score-display"></span>
+          </div>
+        </div>
+        <div id="prompt-area" class="prompt-area"></div>
+      </div>
+
+      <div id="map-container" class="map-container">
+        <div class="zoom-controls">
+          <button id="zoom-in" class="icon-btn" aria-label="拡大">+</button>
+          <button id="zoom-out" class="icon-btn" aria-label="縮小">−</button>
+          <button id="zoom-reset" class="icon-btn" aria-label="リセット">⟲</button>
         </div>
       </div>
 
-      <div id="prompt-area" class="prompt-area"></div>
-      <div id="map-container" class="map-container"></div>
-      <div id="choices" class="choices"></div>
-      <div id="feedback" class="feedback"></div>
+      <div class="game-bottom">
+        <div id="feedback" class="feedback"></div>
+        <div id="choices" class="choices"></div>
+        <div class="action-row">
+          <button id="confirm-btn" class="confirm-btn" disabled>確定</button>
+        </div>
+      </div>
     </section>
 
     <section id="result" hidden>
