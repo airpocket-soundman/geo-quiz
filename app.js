@@ -461,6 +461,48 @@ function runExplore() {
 function showFeedback(msg, kind) {
   els.feedback.textContent = msg;
   els.feedback.className = 'feedback ' + (kind || '');
+  if (kind === 'correct') playCorrectSound();
+  else if (kind === 'wrong') playWrongSound();
+}
+
+let audioCtx = null;
+function getAudioCtx() {
+  if (!audioCtx) {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return null;
+    audioCtx = new Ctx();
+  }
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+
+function playTone({ freq, duration = 0.18, type = 'sine', gain = 0.18, when = 0 }) {
+  const ctx = getAudioCtx();
+  if (!ctx) return;
+  const t0 = ctx.currentTime + when;
+  const osc = ctx.createOscillator();
+  const g = ctx.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, t0);
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(gain, t0 + 0.01);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
+  osc.connect(g).connect(ctx.destination);
+  osc.start(t0);
+  osc.stop(t0 + duration + 0.05);
+}
+
+function playCorrectSound() {
+  // major arpeggio C5 → E5 → G5
+  playTone({ freq: 523.25, duration: 0.12, when: 0,    gain: 0.16 });
+  playTone({ freq: 659.25, duration: 0.12, when: 0.08, gain: 0.16 });
+  playTone({ freq: 783.99, duration: 0.24, when: 0.16, gain: 0.18 });
+}
+
+function playWrongSound() {
+  // low descending buzz
+  playTone({ freq: 220, duration: 0.18, type: 'square', when: 0,    gain: 0.10 });
+  playTone({ freq: 155, duration: 0.32, type: 'square', when: 0.10, gain: 0.10 });
 }
 
 function showResult() {
