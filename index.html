@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>世界地図クイズ</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>🌍 世界地図クイズ</h1>
+    <p class="tagline">国名と場所を当てよう</p>
+  </header>
+
+  <main>
+    <section id="loading" class="card">
+      <p>地図を読み込み中…</p>
+    </section>
+
+    <section id="menu" hidden>
+      <div class="card">
+        <h2>モードを選んでください</h2>
+        <div class="mode-grid">
+          <button class="mode-btn" data-mode="name-to-place">
+            <span class="emoji">📍</span>
+            <strong>国名 → 場所</strong>
+            <small>表示された国を地図上でクリック</small>
+          </button>
+          <button class="mode-btn" data-mode="place-to-name">
+            <span class="emoji">🗺️</span>
+            <strong>場所 → 国名</strong>
+            <small>地図で示された国を選択肢から選ぶ</small>
+          </button>
+          <button class="mode-btn" data-mode="explore">
+            <span class="emoji">🔍</span>
+            <strong>自由探索</strong>
+            <small>地図を眺めて国名を確認</small>
+          </button>
+        </div>
+
+        <h3>地域</h3>
+        <div class="region-grid">
+          <label><input type="radio" name="region" value="all" checked> 全世界</label>
+          <label><input type="radio" name="region" value="asia"> アジア</label>
+          <label><input type="radio" name="region" value="europe"> ヨーロッパ</label>
+          <label><input type="radio" name="region" value="africa"> アフリカ</label>
+          <label><input type="radio" name="region" value="north-america"> 北米</label>
+          <label><input type="radio" name="region" value="south-america"> 南米</label>
+          <label><input type="radio" name="region" value="oceania"> オセアニア</label>
+        </div>
+
+        <h3>問題数</h3>
+        <div class="region-grid">
+          <label><input type="radio" name="count" value="5"> 5問</label>
+          <label><input type="radio" name="count" value="10" checked> 10問</label>
+          <label><input type="radio" name="count" value="20"> 20問</label>
+        </div>
+      </div>
+    </section>
+
+    <section id="game" hidden>
+      <div class="game-header">
+        <button id="back-btn">← メニュー</button>
+        <div class="score">
+          <span id="progress"></span>
+          <span id="score-display"></span>
+        </div>
+      </div>
+
+      <div id="prompt-area" class="prompt-area"></div>
+      <div id="map-container" class="map-container"></div>
+      <div id="choices" class="choices"></div>
+      <div id="feedback" class="feedback"></div>
+    </section>
+
+    <section id="result" hidden>
+      <div class="card">
+        <h2>結果発表</h2>
+        <p id="final-score" class="final-score"></p>
+        <p id="final-comment" class="final-comment"></p>
+        <div class="result-buttons">
+          <button id="play-again">もう一度</button>
+          <button id="back-to-menu">メニューへ</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <small>地図データ: <a href="https://github.com/topojson/world-atlas" target="_blank" rel="noopener">world-atlas</a> ・ 描画: <a href="https://d3js.org/" target="_blank" rel="noopener">d3</a></small>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+  <script src="https://cdn.jsdelivr.net/npm/topojson-client@3"></script>
+  <script src="countries.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
