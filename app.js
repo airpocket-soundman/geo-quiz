@@ -4,6 +4,7 @@ const state = {
   mode: null,
   region: 'all',
   total: 10,
+  answerStyle: 'choice', // 'choice' | 'text' (place-to-name only)
   pool: [],
   questions: [],
   current: 0,
@@ -28,6 +29,8 @@ const els = {
   finalScore: document.getElementById('final-score'),
   finalComment: document.getElementById('final-comment'),
   confirmBtn: document.getElementById('confirm-btn'),
+  textAnswer: document.getElementById('text-answer'),
+  answerInput: document.getElementById('answer-input'),
 };
 
 let svg, gMap, path, projection, zoomBehavior;
@@ -49,6 +52,7 @@ async function init() {
   setupMenu();
   setupZoomControls();
   setupConfirm();
+  setupAnswerInput();
 
   els.loading.hidden = true;
   els.menu.hidden = false;
@@ -109,13 +113,15 @@ function setupMenu() {
       const mode = btn.dataset.mode;
       const region = document.querySelector('input[name="region"]:checked').value;
       const total = parseInt(document.querySelector('input[name="count"]:checked').value, 10);
-      startMode(mode, region, total);
+      const styleEl = document.querySelector('input[name="answer-style"]:checked');
+      const answerStyle = styleEl ? styleEl.value : 'choice';
+      startMode(mode, region, total, answerStyle);
     });
   });
 
   document.getElementById('back-btn').addEventListener('click', backToMenu);
   document.getElementById('back-to-menu').addEventListener('click', backToMenu);
-  document.getElementById('play-again').addEventListener('click', () => startMode(state.mode, state.region, state.total));
+  document.getElementById('play-again').addEventListener('click', () => startMode(state.mode, state.region, state.total, state.answerStyle));
 }
 
 function setupConfirm() {
@@ -128,16 +134,36 @@ function setupConfirm() {
       if (!state.selectedCountryId) return;
       judgeNameToPlace();
     } else if (state.mode === 'place-to-name') {
-      if (!state.selectedChoiceId) return;
-      judgePlaceToName();
+      if (state.answerStyle === 'text') {
+        if (!els.answerInput.value.trim()) return;
+        judgePlaceToNameText();
+      } else {
+        if (!state.selectedChoiceId) return;
+        judgePlaceToName();
+      }
     }
   });
 }
 
-function startMode(mode, region, total) {
+function setupAnswerInput() {
+  els.answerInput.addEventListener('input', () => {
+    if (state.locked || state.mode !== 'place-to-name' || state.answerStyle !== 'text') return;
+    setConfirmState('確定', { disabled: !els.answerInput.value.trim() });
+  });
+  els.answerInput.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    if (e.isComposing) return; // IME変換中のEnterは無視
+    if (els.confirmBtn.disabled) return;
+    e.preventDefault();
+    els.confirmBtn.click();
+  });
+}
+
+function startMode(mode, region, total, answerStyle) {
   state.mode = mode;
   state.region = region;
   state.total = total || 10;
+  state.answerStyle = answerStyle || 'choice';
   state.pool = buildPool(region);
   state.score = 0;
   state.current = 0;
@@ -158,6 +184,7 @@ function startMode(mode, region, total) {
   els.feedback.textContent = '';
   els.feedback.className = 'feedback';
   els.choices.innerHTML = '';
+  els.textAnswer.hidden = true;
 
   if (mode === 'explore') {
     runExplore();
@@ -220,13 +247,18 @@ function nextQuestion() {
   els.feedback.textContent = '';
   els.feedback.className = 'feedback';
   els.choices.innerHTML = '';
+  els.textAnswer.hidden = true;
+  els.answerInput.value = '';
+  els.answerInput.disabled = false;
+  els.answerInput.classList.remove('correct', 'wrong');
   resetCountryClasses();
   resetZoom(true);
 
   if (state.mode === 'name-to-place') {
     runNameToPlace(q);
   } else if (state.mode === 'place-to-name') {
-    runPlaceToName(q);
+    if (state.answerStyle === 'text') runPlaceToNameText(q);
+    else runPlaceToName(q);
   }
 }
 
@@ -300,6 +332,61 @@ function runPlaceToName(q) {
   }
 
   setConfirmState('確定', { disabled: true });
+}
+
+function runPlaceToNameText(q) {
+  els.promptArea.innerHTML = '<span>赤色の国名を入力</span>';
+  gMap.selectAll('.country').filter(d => normId(d.id) === q.id).classed('target', true);
+  gMap.selectAll('.country').classed('locked', true);
+
+  els.choices.innerHTML = '';
+  els.textAnswer.hidden = false;
+  els.answerInput.value = '';
+  els.answerInput.disabled = false;
+  els.answerInput.classList.remove('correct', 'wrong');
+  setConfirmState('確定', { disabled: true });
+
+  // モバイルでも自動フォーカス（タッチ確実性のため遅延）
+  setTimeout(() => { try { els.answerInput.focus(); } catch (e) {} }, 80);
+}
+
+function judgePlaceToNameText() {
+  const q = state.questions[state.current];
+  state.locked = true;
+  state.pendingAdvance = true;
+
+  const userInput = els.answerInput.value;
+  els.answerInput.disabled = true;
+
+  if (checkTextAnswer(userInput, q)) {
+    state.score++;
+    els.answerInput.classList.add('correct');
+    showFeedback(`正解！ ${q.name}`, 'correct');
+  } else {
+    els.answerInput.classList.add('wrong');
+    showFeedback(`不正解。 正解は ${q.name}`, 'wrong');
+  }
+  els.scoreDisplay.textContent = `スコア: ${state.score}`;
+
+  const isLast = state.current >= state.questions.length - 1;
+  setConfirmState(isLast ? '結果を見る' : '次の問題へ', { next: true });
+}
+
+function normalizeText(s) {
+  if (!s) return '';
+  return s
+    .normalize('NFKC')
+    .replace(/[\s　・·・‐‑‒–—―\-]/g, '')
+    .toLowerCase();
+}
+
+function checkTextAnswer(input, country) {
+  const n = normalizeText(input);
+  if (!n) return false;
+  const meta = COUNTRIES[country.id];
+  if (!meta) return false;
+  const candidates = [meta[0], ...((meta[3] || []))];
+  return candidates.some(c => normalizeText(c) === n);
 }
 
 function pickDistractors(target, n) {

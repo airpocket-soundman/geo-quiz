@@ -55,6 +55,12 @@
           <label><input type="radio" name="count" value="10" checked> 10問</label>
           <label><input type="radio" name="count" value="20"> 20問</label>
         </div>
+
+        <h3>回答形式 <span class="hint">（場所→国名のみ）</span></h3>
+        <div class="region-grid">
+          <label><input type="radio" name="answer-style" value="choice" checked> 4択</label>
+          <label><input type="radio" name="answer-style" value="text"> 記入式</label>
+        </div>
       </div>
     </section>
 
@@ -81,6 +87,10 @@
       <div class="game-bottom">
         <div id="feedback" class="feedback"></div>
         <div id="choices" class="choices"></div>
+        <div id="text-answer" class="text-answer" hidden>
+          <input id="answer-input" type="text" placeholder="国名を入力..."
+            autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+        </div>
         <div class="action-row">
           <button id="confirm-btn" class="confirm-btn" disabled>確定</button>
         </div>
