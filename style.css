@@ -50,6 +50,13 @@ header h1 {
   font-size: 0.875rem;
 }
 
+.version {
+  margin-left: 0.5rem;
+  color: #64748b;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
 main {
   flex: 1;
   max-width: 1100px;
